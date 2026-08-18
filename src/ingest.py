@@ -10,6 +10,16 @@ but running it on the sample file is a good test.
 import re
 from bs4 import BeautifulSoup
 
+def extract_case_name(soup, fallback):
+    """Pull the case name from the judgment HTML."""
+    for p in soup.find_all("p"):
+        text = p.get_text().replace("\xa0", " ")
+        text = re.sub(r"\s+", " ", text).strip()
+        # The case name line contains "CASE OF" and "v." and is short
+        if "CASE OF" in text.upper() and " V. " in text.upper() and len(text) < 120:
+            return text
+    return fallback
+
 # Section headings we care about tagging
 SECTION_HEADERS = {
     "INTRODUCTION", "THE FACTS", "THE LAW", "PROCEDURE",
@@ -30,6 +40,9 @@ def parse_judgment(html, case_name, itemid):
     Returns: [{case, itemid, para, section, text}, ...]
     """
     soup = BeautifulSoup(html, "html.parser")
+    # If no case name was passed (re-parsing from cached HTML), extract it
+    if case_name is None:
+        case_name = extract_case_name(soup, itemid)
     paras = soup.find_all("p")
 
     chunks = []
@@ -40,9 +53,13 @@ def parse_judgment(html, case_name, itemid):
         if not text:
             continue
 
-        # Is this a section heading? (short, all-caps, known header)
+        # Is this a section heading? Must be a known header, or a
+        # Roman-numeral-prefixed heading like "I. THE FACTS".
+        # This avoids treating stray initials / acronyms as sections.
         upper = text.upper()
-        if upper in SECTION_HEADERS or (len(text) < 40 and text.isupper() and len(text) > 3):
+        is_known = upper in SECTION_HEADERS
+        is_roman_heading = bool(re.match(r"^[IVX]+\.\s+[A-Z]", text)) and len(text) < 80
+        if is_known or is_roman_heading:
             current_section = upper
             continue
 
@@ -52,7 +69,7 @@ def parse_judgment(html, case_name, itemid):
             para_num = int(m.group(1))
             para_text = m.group(2).strip()
             # Filter out stray short fragments
-            if len(para_text) > 20:
+            if len(para_text) >= 40:
                 chunks.append({
                     "case": case_name,
                     "itemid": itemid,
