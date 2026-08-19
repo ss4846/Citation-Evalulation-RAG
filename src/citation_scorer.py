@@ -113,7 +113,7 @@ def score_output(record):
         if case is None:
             # bare "§N" - valid if that para was retrieved
             if para in retrieved_paras:
-                n_valid += 1
+                n_valid += 1    
             else:
                 n_ghost += 1
             continue
